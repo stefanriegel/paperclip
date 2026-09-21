@@ -315,7 +315,10 @@ import {
 } from "../services/trust-preset-resolver.js";
 import { externalObjectService } from "../services/external-objects.js";
 import { getExternalChannelBindingSummary } from "../services/chat-channel-binding.js";
-import { deliverAgentUnblockNotification } from "../services/routable-blocked.js";
+import {
+  deliverAgentUnblockNotification,
+  sameUnblockDescriptor,
+} from "../services/routable-blocked.js";
 import {
   assertIssueReviewVerdictActorAllowed,
   isIssueReviewVerdictInteraction,
@@ -13750,11 +13753,17 @@ export function issueRoutes(
         publishActivity(publication);
       await flushIssuePostCommitActions(postCommitIssueActions);
 
-      if (enteringBlocked) {
+      // A descriptor edited while the issue stays `blocked` is a new instruction to the same owner,
+      // and this transition-time path would never run for it again. Deliver that edit too.
+      const descriptorEdited =
+        existing.status === "blocked" &&
+        !sameUnblockDescriptor(existing.unblockDescriptor ?? null, issue.unblockDescriptor ?? null);
+      if (enteringBlocked || descriptorEdited) {
         const blockedIssue = issue;
         let ownerNotifiedAt: Date | null = null;
         await deliverAgentUnblockNotification({
           issue: blockedIssue,
+          previousDescriptor: existing.unblockDescriptor ?? null,
           wakeup: heartbeat.wakeup,
           markNotified: async (blockedOwnerNotifiedAt) => {
             ownerNotifiedAt = blockedOwnerNotifiedAt;
